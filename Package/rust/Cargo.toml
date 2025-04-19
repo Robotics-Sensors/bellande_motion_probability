@@ -1,6 +1,6 @@
 [package]
 name = "bellande_motion_probability"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 authors = ["Bellande Robotics Sensors Research Innovation Center"]
 description = "The Bellande Motion Probability algorithm calculates particle movement probabilities using Bellande distributions for enhanced motion estimation"

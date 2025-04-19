@@ -17,7 +17,7 @@ use reqwest;
 use serde_json::{json, Value};
 use std::error::Error;
 use std::path::{Path, PathBuf};
-use std::process::{self, Command};
+use std::process::Command;
 use structopt::StructOpt;
 
 #[derive(StructOpt, Debug)]
@@ -62,7 +62,7 @@ struct Opt {
     use_executable: bool,
 }
 
-async fn make_bellande_motion_probability_request(
+pub async fn make_bellande_motion_probability_request(
     particle_state: Value,
     previous_pose: Value,
     current_pose: Value,
@@ -102,7 +102,48 @@ async fn make_bellande_motion_probability_request(
     Ok(response)
 }
 
-fn get_executable_path() -> PathBuf {
+pub async fn make_bellande_motion_probability_request_local(
+    url: &str,
+    particle_state: Value,
+    previous_pose: Value,
+    current_pose: Value,
+    noise_params: Option<Value>,
+    search_radius: f64,
+    sample_points: i32,
+) -> Result<Value, Box<dyn Error>> {
+    let client = reqwest::Client::new();
+    let url = url;
+
+    let payload = json!({
+        "particle_state": particle_state,
+        "previous_pose": previous_pose,
+        "current_pose": current_pose,
+        "noise_params": noise_params.unwrap_or(json!({
+            "trans_sigma": 0.1,
+            "rot_sigma": 0.1,
+            "head_sigma": 0.1
+        })),
+        "search_radius": search_radius,
+        "sample_points": sample_points,
+        "auth": {
+            "authorization_key": "bellande_web_api_opensource"
+        }
+    });
+
+    let response = client
+        .post(url)
+        .header("accept", "application/json")
+        .header("Content-Type", "application/json")
+        .json(&payload)
+        .send()
+        .await?
+        .json::<Value>()
+        .await?;
+
+    Ok(response)
+}
+
+pub fn get_executable_path() -> PathBuf {
     if cfg!(target_os = "windows") {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("Bellande_Motion_Probability.exe")
     } else {
@@ -110,7 +151,7 @@ fn get_executable_path() -> PathBuf {
     }
 }
 
-fn run_bellande_motion_probability_executable(
+pub fn run_bellande_motion_probability_executable(
     particle_state: &str,
     previous_pose: &str,
     current_pose: &str,
@@ -178,59 +219,4 @@ fn run_bellande_motion_probability_executable(
         )
         .into())
     }
-}
-
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
-    let opt = Opt::from_args();
-
-    // Parse JSON strings to Values for validation
-    let particle_state: Value = serde_json::from_str(&opt.particle_state)
-        .map_err(|e| format!("Error parsing particle state: {}", e))?;
-    let previous_pose: Value = serde_json::from_str(&opt.previous_pose)
-        .map_err(|e| format!("Error parsing previous pose: {}", e))?;
-    let current_pose: Value = serde_json::from_str(&opt.current_pose)
-        .map_err(|e| format!("Error parsing current pose: {}", e))?;
-    let noise_params_ref = opt.noise_params.as_ref();
-    let noise_params: Option<Value> = noise_params_ref
-        .map(|n| serde_json::from_str(n))
-        .transpose()
-        .map_err(|e| format!("Error parsing noise parameters: {}", e))?;
-
-    if opt.use_executable {
-        // Run using local executable
-        if let Err(e) = run_bellande_motion_probability_executable(
-            &opt.particle_state,
-            &opt.previous_pose,
-            &opt.current_pose,
-            noise_params_ref.map(String::as_str),
-            opt.search_radius,
-            opt.sample_points,
-        ) {
-            eprintln!("Error: {}", e);
-            process::exit(1);
-        }
-    } else {
-        // Run using API
-        match make_bellande_motion_probability_request(
-            particle_state,
-            previous_pose,
-            current_pose,
-            noise_params,
-            opt.search_radius,
-            opt.sample_points,
-        )
-        .await
-        {
-            Ok(result) => {
-                println!("{}", serde_json::to_string_pretty(&result)?);
-            }
-            Err(e) => {
-                eprintln!("Error: {}", e);
-                process::exit(1);
-            }
-        }
-    }
-
-    Ok(())
 }
